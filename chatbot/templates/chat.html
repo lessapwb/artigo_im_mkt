@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Interface</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="api-key-container" id="api-key-container">
+        <h2>Enter your OpenAI API Key</h2>
+        <input type="text" id="api-key-input" placeholder="API Key">
+        <button onclick="saveApiKey()">Save Key</button>
+    </div>
+
+    <div class="chat-container" id="chat-container" style="display: none;">
+        <h2>Chat with the Chatbot</h2>
+        <div id="chatbox" class="chat-box"></div>
+        <div class="input-container">
+            <input type="text" id="user-input" placeholder="Type your question..." autocomplete="off">
+            <button id="send-btn" onclick="sendQuestion()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        function saveApiKey() {
+            const apiKey = document.getElementById('api-key-input').value;
+            if (!apiKey) {
+                alert("Please enter a valid API key.");
+                return;
+            }
+            localStorage.setItem('openai_api_key', apiKey);
+            document.getElementById('api-key-container').style.display = 'none';
+            document.getElementById('chat-container').style.display = 'block';
+        }
+
+        function renderResponse(text, isUser = false) {
+            const html = marked.parse(text);
+            const chatbox = document.getElementById("chatbox");
+
+            const messageDiv = document.createElement("div");
+            messageDiv.classList.add("message");
+            messageDiv.classList.add(isUser ? "user" : "bot");
+            messageDiv.innerHTML = html;
+
+            chatbox.appendChild(messageDiv);
+            chatbox.scrollTop = chatbox.scrollHeight;
+        }
+
+        function showUpdateButton() {
+            const chatbox = document.getElementById("chatbox");
+            const updateButtonDiv = document.createElement("div");
+            updateButtonDiv.classList.add("update-button");
+            updateButtonDiv.innerHTML = `
+                <p>Incorrect API Key provided. Please try again and refresh the page.</p>
+                <button onclick="location.reload()">Update the page</button>
+            `;
+            chatbox.appendChild(updateButtonDiv);
+        }
+
+        function sendQuestion() {
+            const questionInput = document.getElementById("user-input");
+            const question = questionInput.value;
+
+            if (question.trim() === "") return;
+
+            renderResponse(question, true);
+            questionInput.value = "";
+
+            // Exibe mensagem de "Gerando resposta..."
+            const loadingMessage = document.createElement("div");
+            loadingMessage.classList.add("loading");
+            loadingMessage.textContent = "Generating response...";
+            document.getElementById("chatbox").appendChild(loadingMessage);
+
+            const apiKey = localStorage.getItem('openai_api_key');
+            if (!apiKey) {
+                alert("API key missing. Please refresh and enter your key.");
+                return;
+            }
+
+            fetch('/ask', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`  // Envia a chave da API no cabeçalho
+                },
+                body: JSON.stringify({ question })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("chatbox").removeChild(loadingMessage); // Remove "Gerando resposta..."
+                if (data.answer && data.answer.includes("Incorrect API key")) {
+                    showUpdateButton();  // Chama a função para mostrar o botão de atualização
+                } else {
+                    renderResponse(data.answer);
+                }
+            })
+            .catch(error => {
+                document.getElementById("chatbox").removeChild(loadingMessage); // Remove "Gerando resposta..."
+                console.error('Error:', error);
+                renderResponse("Sorry, an error occurred while generating the response.");
+            });
+        }
+    </script>
+</body>
+</html>
