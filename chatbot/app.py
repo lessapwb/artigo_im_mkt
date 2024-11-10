@@ -16,7 +16,7 @@ def load_text_file(file_path):
         return file.read()
 
 # Carregar os textos do arquivo .txt
-corpus_text = load_text_file(r'C:\programacao\artigo_im_mkt\output.txt')  # Caminho para o seu arquivo de texto
+corpus_text = load_text_file('output.txt')  # Caminho relativo
 
 # Função para obter o embedding de um texto usando o modelo text-embedding-3-large
 def get_embedding(text, api_key):
