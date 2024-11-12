@@ -1,11 +1,12 @@
 import openai
 import numpy as np
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session
 from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 import os
 
 app = Flask(__name__)
+app.secret_key = "your_secret_key"  # Defina uma chave secreta para as sessões
 
 # Carregar a chave da API do arquivo .env
 load_dotenv()
@@ -35,7 +36,7 @@ def get_embedding(text, api_key):
         return f"An error occurred: {str(e)}"
 
 # Função para dividir o texto em pedaços menores para maximizar o uso de tokens
-def chunk_text(text, chunk_size=3500):
+def chunk_text(text, chunk_size=2000):
     return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
 
 # Função para encontrar respostas similares no corpus e gerar um contexto maior
@@ -74,9 +75,7 @@ def find_similar_responses(user_query, corpus_text, api_key, max_chunks=3):
                 {
                     "role": "system",
                     "content": (
-                        "You are an expert analyst specializing in market intelligence. "
-                        "You have access to a carefully curated database of articles. "
-                        "Your responses should be based solely on the content of the provided articles. "
+                        "You have access to a carefully curated database of 94 articles. "
                         "If the question asks for information that cannot be derived from the articles, respond with 'I cannot determine this based on the available data.' "
                         "Ensure your answers are detailed, clear, and relevant."
                     )
@@ -99,6 +98,9 @@ def find_similar_responses(user_query, corpus_text, api_key, max_chunks=3):
 
 @app.route('/')
 def home():
+    # Inicializar o histórico de conversa na sessão, se não existir
+    if "conversation_history" not in session:
+        session["conversation_history"] = []
     return render_template('chat.html')
 
 @app.route('/ask', methods=['POST'])
@@ -106,10 +108,22 @@ def ask():
     data = request.json
     user_question = data.get("question")
     api_key = request.headers.get("Authorization").split("Bearer ")[1]
+
+    # Recuperar a conversa temporária da sessão
+    conversation_history = session.get("conversation_history", [])
+
+    # Adicionar a pergunta do usuário ao histórico
+    conversation_history.append({"role": "user", "content": user_question})
+
+    # Encontrar a resposta e adicionar ao histórico
     response_text = find_similar_responses(user_question, corpus_text, api_key)
+    conversation_history.append({"role": "assistant", "content": response_text})
+
+    # Atualizar o histórico na sessão
+    session["conversation_history"] = conversation_history
+
     return jsonify({"answer": response_text})
 
 if __name__ == "__main__":
     # Use a variável de ambiente PORT fornecida pelo Heroku
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
