@@ -104,6 +104,14 @@
                 renderResponse("Sorry, an error occurred while generating the response.");
             });
         }
+
+        // Adiciona o evento de "Enter" ao campo de entrada
+        document.getElementById("user-input").addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                event.preventDefault(); // Impede o comportamento padrão do Enter
+                sendQuestion(); // Chama a função para enviar a pergunta
+            }
+        });
     </script>
 </body>
 </html>
