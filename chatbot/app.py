@@ -36,7 +36,7 @@ def get_embedding(text, api_key):
         return f"An error occurred: {str(e)}"
 
 # Função para dividir o texto em pedaços menores para maximizar o uso de tokens
-def chunk_text(text, chunk_size=2000):
+def chunk_text(text, chunk_size=3000):
     return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
 
 # Função para encontrar respostas similares no corpus e gerar um contexto maior
