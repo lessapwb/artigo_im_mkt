@@ -2,103 +2,114 @@ import openai
 import numpy as np
 from flask import Flask, render_template, request, jsonify, session
 from sklearn.metrics.pairwise import cosine_similarity
-from dotenv import load_dotenv
 import os
 
 app = Flask(__name__)
-app.secret_key = "your_secret_key"  # Defina uma chave secreta para as sessões
+app.secret_key = "your_secret_key"
 
-# Carregar a chave da API do arquivo .env
-load_dotenv()
+# Temporary cache to store embeddings
+corpus_embeddings_cache = {}
+question_embeddings_cache = {}
 
-# Função para carregar o conteúdo do arquivo .txt
+# Load and preprocess the document content from 'output.txt'
 def load_text_file(file_path):
     with open(file_path, 'r', encoding='utf-8') as file:
         return file.read()
 
-# Carregar os textos do arquivo .txt
-corpus_text = load_text_file('output.txt')  # Caminho relativo
+# Load the document content
+corpus_text = load_text_file('output.txt')
 
-# Função para obter o embedding de um texto usando o modelo text-embedding-3-large
-def get_embedding(text, api_key):
-    openai.api_key = api_key  # Usar a chave da API fornecida
+# Function to obtain embeddings with caching
+def get_embedding(text, api_key, model="text-embedding-ada-002"):
+    openai.api_key = api_key  # Set the API key globally
     try:
-        # Chama a API para gerar o embedding do texto
-        response = openai.embeddings.create(
-            model="text-embedding-3-large",  # Usando o modelo text-embedding-3-large
-            input=text
-        )
-        # Acessa o embedding da resposta corretamente
-        embedding = response.data[0].embedding  # Correção para acessar o 'embedding'
+        if text in corpus_embeddings_cache:
+            return corpus_embeddings_cache[text]
+        
+        # Get the embedding from OpenAI API without api_key as an argument in create()
+        response = openai.embeddings.create(input=[text], model=model)
+        embedding = response.data[0].embedding  # Access the embedding directly as an attribute
+        
+        # Cache the embedding
+        corpus_embeddings_cache[text] = embedding
         return embedding
     except Exception as e:
-        # Em caso de erro, retorna uma mensagem de erro
+        print(f"Error in get_embedding: {str(e)}")  # Logging the error
         return f"An error occurred: {str(e)}"
 
-# Função para dividir o texto em pedaços menores para maximizar o uso de tokens
-def chunk_text(text, chunk_size=1000):
-    return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
+# Split text into chunks and generate embeddings for each chunk
+def preprocess_corpus(api_key, chunk_size=8000):
+    chunked_corpus = [corpus_text[i:i + chunk_size] for i in range(0, len(corpus_text), chunk_size)]
+    embeddings = []
+    for chunk in chunked_corpus:
+        embedding = get_embedding(chunk, api_key)
+        if isinstance(embedding, str):  # If an error string is returned, stop processing
+            print(f"Error during corpus preprocessing: {embedding}")  # Log the error
+            return embedding
+        embeddings.append(embedding)
+    return chunked_corpus, np.array(embeddings)
 
-# Função para encontrar respostas similares no corpus e gerar um contexto maior
-def find_similar_responses(user_query, corpus_text, api_key, max_chunks=3):
-    try:
-        # Obter o embedding da pergunta do usuário
-        query_embedding = get_embedding(user_query, api_key)
+# Cache corpus embeddings on first request
+chunked_corpus = None
+corpus_embeddings = None
 
-        if isinstance(query_embedding, str):  # Se a resposta for um erro, retornamos a mensagem
-            return query_embedding
+# Retrieve question embedding with caching
+def get_question_embedding(question, api_key):
+    if question in question_embeddings_cache:
+        return question_embeddings_cache[question]
+    
+    question_embedding = get_embedding(question, api_key)
+    question_embeddings_cache[question] = question_embedding
+    return question_embedding
 
-        # Carregar e dividir o texto do corpus em pedaços menores
-        chunked_corpus = chunk_text(corpus_text)
+def find_similar_response(question, api_key, max_chunks=8):
+    global chunked_corpus, corpus_embeddings
 
-        # Calcular a similaridade entre o embedding da pergunta e os pedaços do corpus
-        corpus_embeddings = np.array([get_embedding(chunk, api_key) for chunk in chunked_corpus])
+    # Initialize corpus embeddings if not done already
+    if chunked_corpus is None or corpus_embeddings is None:
+        preprocessed_corpus = preprocess_corpus(api_key)
+        if isinstance(preprocessed_corpus, str):  # Check if an error occurred
+            return preprocessed_corpus
+        chunked_corpus, corpus_embeddings = preprocessed_corpus
 
-        # Verifica se algum erro foi gerado nos embeddings
-        if isinstance(corpus_embeddings[0], str):  # Se algum embedding não for gerado corretamente
-            return corpus_embeddings[0]  # Retorna o erro
+    question_embedding = get_question_embedding(question, api_key)
+    if isinstance(question_embedding, str):  # Check for error in question embedding
+        return question_embedding
+    
+    similarities = cosine_similarity([question_embedding], corpus_embeddings)[0]
+    best_indexes = np.argsort(similarities)[::-1][:max_chunks]
+    
+    # Gather the most relevant chunks as context
+    context = "\n".join(chunked_corpus[idx] for idx in best_indexes)
+    
+    # Chamada à API de completions atualizada
+    response = openai.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a knowledgeable assistant with access to a detailed document database on topics related to market intelligence. "
+                    "Use only the provided context to answer the user's questions as accurately and specifically as possible. "
+                    "If you can't generate a answear based in the context, respond with 'I cannot determine this based on the available data.' "
+                    "If the user asks about trends in market intelligence or marketing, analyze only articles from 2024 and respond with: 'Based on the database, the trends are...' followed by a bulleted list of each trend with a brief description and some article name."
+                )
+            },
+            {"role": "user", "content": f"Context: {context}"},
+            {"role": "user", "content": question}
+        ],
+        temperature=0.3,
+        max_tokens=16383,
+        top_p=1,
+        frequency_penalty=0,
+        presence_penalty=0
+    )
 
-        similarities = cosine_similarity([query_embedding], corpus_embeddings)[0]
-
-        # Obter os índices dos textos mais similares
-        best_indexes = np.argsort(similarities)[::-1][:max_chunks]
-
-        # Construir o texto de contexto (pegando os 'max_chunks' mais relevantes)
-        context = ""
-        for index in best_indexes:
-            context += chunked_corpus[index] + "\n"
-
-        # Gerar uma resposta com o modelo de chat
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You have access to a carefully curated database of 94 articles. "
-                        "If the question asks for information that cannot be derived from the articles, respond with 'I cannot determine this based on the available data.' "
-                        "Ensure your answers are detailed, clear, and relevant."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": f"Contextual background (for more precise analysis): {context}"
-                },
-                {
-                    "role": "user",
-                    "content": f"Specific question (to focus your answer): {user_query}"
-                }
-            ]
-        )
-
-        return response.choices[0].message.content.strip()
-
-    except Exception as e:
-        return f"<div>An error occurred: {str(e)}</div><button onclick='location.reload()'>Update the page</button>"
+    # Acessar diretamente usando atributos em vez de subscrição
+    return response.choices[0].message.content
 
 @app.route('/')
 def home():
-    # Inicializar o histórico de conversa na sessão, se não existir
     if "conversation_history" not in session:
         session["conversation_history"] = []
     return render_template('chat.html')
@@ -107,23 +118,24 @@ def home():
 def ask():
     data = request.json
     user_question = data.get("question")
-    api_key = request.headers.get("Authorization").split("Bearer ")[1]
+    
+    authorization_header = request.headers.get("Authorization")
+    if authorization_header is None or not authorization_header.startswith("Bearer "):
+        return jsonify({"error": "Authorization header missing or incorrectly formatted"}), 400
 
-    # Recuperar a conversa temporária da sessão
-    conversation_history = session.get("conversation_history", [])
+    api_key = authorization_header.split("Bearer ")[1]
 
-    # Adicionar a pergunta do usuário ao histórico
+    # Limit conversation history to recent messages to avoid session overflow
+    conversation_history = session.get("conversation_history", [])[-5:]
     conversation_history.append({"role": "user", "content": user_question})
-
-    # Encontrar a resposta e adicionar ao histórico
-    response_text = find_similar_responses(user_question, corpus_text, api_key)
+    
+    response_text = find_similar_response(user_question, api_key)
     conversation_history.append({"role": "assistant", "content": response_text})
-
-    # Atualizar o histórico na sessão
+    
+    # Update the session with limited conversation history
     session["conversation_history"] = conversation_history
-
+    
     return jsonify({"answer": response_text})
 
 if __name__ == "__main__":
-    # Use a variável de ambiente PORT fornecida pelo Heroku
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
