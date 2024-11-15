@@ -20,7 +20,7 @@ def load_text_file(file_path):
 corpus_text = load_text_file('output.txt')
 
 # Function to obtain embeddings with caching
-def get_embedding(text, api_key, model="text-embedding-ada-002"):
+def get_embedding(text, api_key, model="text-embedding-3-large"):
     openai.api_key = api_key  # Set the API key globally
     try:
         if text in corpus_embeddings_cache:
@@ -38,7 +38,7 @@ def get_embedding(text, api_key, model="text-embedding-ada-002"):
         return f"An error occurred: {str(e)}"
 
 # Split text into chunks and generate embeddings for each chunk
-def preprocess_corpus(api_key, chunk_size=8000):
+def preprocess_corpus(api_key, chunk_size=1000):
     chunked_corpus = [corpus_text[i:i + chunk_size] for i in range(0, len(corpus_text), chunk_size)]
     embeddings = []
     for chunk in chunked_corpus:
@@ -62,7 +62,7 @@ def get_question_embedding(question, api_key):
     question_embeddings_cache[question] = question_embedding
     return question_embedding
 
-def find_similar_response(question, api_key, max_chunks=8):
+def find_similar_response(question, api_key, max_chunks=30):
     global chunked_corpus, corpus_embeddings
 
     # Initialize corpus embeddings if not done already
@@ -84,11 +84,12 @@ def find_similar_response(question, api_key, max_chunks=8):
     
     # Chamada à API de completions atualizada
     response = openai.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4-turbo",
         messages=[
             {
                 "role": "system",
                 "content": (
+                    "Only english."
                     "You are a knowledgeable assistant with access to a detailed document database on topics related to market intelligence. "
                     "Use only the provided context to answer the user's questions as accurately and specifically as possible. "
                     "If you can't generate a answear based in the context, respond with 'I cannot determine this based on the available data.' "
@@ -98,8 +99,8 @@ def find_similar_response(question, api_key, max_chunks=8):
             {"role": "user", "content": f"Context: {context}"},
             {"role": "user", "content": question}
         ],
-        temperature=0.3,
-        max_tokens=16383,
+        temperature=1,
+        max_tokens=4096,
         top_p=1,
         frequency_penalty=0,
         presence_penalty=0
