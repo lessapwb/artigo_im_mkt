@@ -3,9 +3,6 @@ import numpy as np
 from flask import Flask, render_template, request, jsonify, session
 from sklearn.metrics.pairwise import cosine_similarity
 import os
-import subprocess
-import hmac
-import hashlib
 from dotenv import load_dotenv
 
 app = Flask(__name__)
@@ -14,8 +11,8 @@ app.secret_key = "your_secret_key"
 # Carregar variáveis de ambiente a partir do arquivo .env
 load_dotenv()
 
-# Obter o valor da variável de ambiente
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+# Obter a chave da API diretamente do arquivo .env
+api_key = os.getenv("OPENAI_API_KEY")
 
 # Temporary cache to store embeddings
 corpus_embeddings_cache = {}
@@ -130,11 +127,9 @@ def ask():
     data = request.json
     user_question = data.get("question")
     
-    authorization_header = request.headers.get("Authorization")
-    if authorization_header is None or not authorization_header.startswith("Bearer "):
-        return jsonify({"error": "Authorization header missing or incorrectly formatted"}), 400
-
-    api_key = authorization_header.split("Bearer ")[1]
+    # Use the api_key from the .env file directly without needing to send it in the request
+    if not api_key:
+        return jsonify({"error": "API key not found. Please configure the key in the .env file."}), 400
 
     # Limit conversation history to recent messages to avoid session overflow
     conversation_history = session.get("conversation_history", [])[-5:]
@@ -148,43 +143,5 @@ def ask():
     
     return jsonify({"answer": response_text})
 
-# Webhook endpoint for GitHub to trigger updates
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    # Obter a assinatura do cabeçalho X-Hub-Signature-256
-    signature = request.headers.get('X-Hub-Signature-256')
-    
-    # Se a assinatura não estiver presente, retorne erro
-    if signature is None:
-        return 'No signature', 403
-
-    # O GitHub envia a assinatura no formato sha256=SIGNATURE_VALUE
-    sha_name, github_signature = signature.split('=')
-    
-    if sha_name != 'sha256':
-        return 'Invalid signature algorithm', 403
-
-    # Gerar a assinatura do servidor utilizando o segredo e os dados da requisição
-    mac = hmac.new(WEBHOOK_SECRET.encode(), msg=request.data, digestmod=hashlib.sha256)
-    generated_signature = mac.hexdigest()
-
-    # Adicione um log para verificar ambas as assinaturas
-    print(f"Generated signature (server): {generated_signature}")
-    print(f"GitHub signature: {github_signature}")
-
-    # Comparar as duas assinaturas
-    if not hmac.compare_digest(generated_signature, github_signature):
-        print("Signatures do not match!")
-        return 'Invalid signature', 403
-
-    # Se as assinaturas coincidirem, execute o script de atualização
-    try:
-        result = subprocess.run(['./update_app.sh'], check=True, capture_output=True, text=True)
-        return 'Updated successfully', 200
-    except subprocess.CalledProcessError as e:
-        return f"Error running script: {e.stderr}", 500
-
-
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-# tes
+    app.run(debug=False, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

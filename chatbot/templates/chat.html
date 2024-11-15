@@ -9,13 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
-    <div class="api-key-container" id="api-key-container">
-        <h2>Enter your OpenAI API Key</h2>
-        <input type="text" id="api-key-input" placeholder="API Key">
-        <button onclick="saveApiKey()">Save Key</button>
-    </div>
-
-    <div class="chat-container" id="chat-container" style="display: none;">
+    <div class="chat-container" id="chat-container">
         <h2>Chat about MI and MKT</h2>
         <div id="chatbox" class="chat-box"></div>
         <div class="input-container">
@@ -26,17 +20,6 @@
     </div>
 
     <script>
-        function saveApiKey() {
-            const apiKey = document.getElementById('api-key-input').value;
-            if (!apiKey) {
-                alert("Please enter a valid API key.");
-                return;
-            }
-            localStorage.setItem('openai_api_key', apiKey);
-            document.getElementById('api-key-container').style.display = 'none';
-            document.getElementById('chat-container').style.display = 'block';
-        }
-
         function handleEnter(event) {
             if (event.key === "Enter") {
                 sendQuestion();
@@ -57,17 +40,10 @@
             loadingMessage.textContent = "Generating response... Take it easy; it takes time...";
             document.getElementById("chatbox").appendChild(loadingMessage);
 
-            const apiKey = localStorage.getItem('openai_api_key');
-            if (!apiKey) {
-                alert("API key missing. Please refresh and enter your key.");
-                return;
-            }
-
             fetch('/ask', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`  // Envia a chave da API no cabeçalho
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ question })
             })
