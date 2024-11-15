@@ -4,9 +4,14 @@ from flask import Flask, render_template, request, jsonify, session
 from sklearn.metrics.pairwise import cosine_similarity
 import os
 import subprocess
+import hmac
+import hashlib
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
+
+# Carregar o token secreto do webhook a partir da variável de ambiente
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET")
 
 # Temporary cache to store embeddings
 corpus_embeddings_cache = {}
@@ -142,13 +147,22 @@ def ask():
 # Webhook endpoint for GitHub to trigger updates
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    # Verifica se o request é do GitHub
-    if request.method == 'POST':
-        # Executa o script de atualização
-        subprocess.call(['./update_app.sh'])
-        return 'Updated successfully', 200
-    else:
-        return 'Invalid request', 400
+    # Verifica a assinatura do GitHub para garantir que o request é autêntico
+    signature = request.headers.get("X-Hub-Signature-256")
+    if signature is None:
+        return 'No signature', 403
+
+    sha_name, signature = signature.split('=')
+    if sha_name != 'sha256':
+        return 'Invalid signature', 403
+
+    mac = hmac.new(WEBHOOK_SECRET.encode(), msg=request.data, digestmod=hashlib.sha256)
+    if not hmac.compare_digest(mac.hexdigest(), signature):
+        return 'Invalid signature', 403
+
+    # Executa o script de atualização
+    subprocess.call(['./update_app.sh'])
+    return 'Updated successfully', 200
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
