@@ -152,17 +152,24 @@ def webhook():
     if signature is None:
         return 'No signature', 403
 
-    sha_name, signature = signature.split('=')
-    if sha_name != 'sha256':
+    sha_name, signature = signature.split('=')  # Divide para obter o algoritmo e a assinatura
+    if sha_name != 'sha256':  # Verifica se o algoritmo é o sha256
         return 'Invalid signature', 403
 
+    # Gera a assinatura usando o segredo e os dados da requisição
     mac = hmac.new(WEBHOOK_SECRET.encode(), msg=request.data, digestmod=hashlib.sha256)
-    if not hmac.compare_digest(mac.hexdigest(), signature):
+    if not hmac.compare_digest(mac.hexdigest(), signature):  # Compara as assinaturas
         return 'Invalid signature', 403
 
     # Executa o script de atualização
-    subprocess.call(['./update_app.sh'])
-    return 'Updated successfully', 200
+    try:
+        # Usando subprocess.run para capturar erros e saídas
+        result = subprocess.run(['./update_app.sh'], check=True, capture_output=True, text=True)
+        # Se o script executou com sucesso, retornar uma mensagem de sucesso
+        return 'Updated successfully', 200
+    except subprocess.CalledProcessError as e:
+        # Se ocorrer um erro no subprocesso, logue o erro e retorne uma mensagem adequada
+        return f"Error running script: {e.stderr}", 500
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
