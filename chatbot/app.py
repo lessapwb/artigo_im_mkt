@@ -6,12 +6,16 @@ import os
 import subprocess
 import hmac
 import hashlib
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
 
-# Carregar o token secreto do webhook a partir da variável de ambiente
-WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET")
+# Carregar variáveis de ambiente a partir do arquivo .env
+load_dotenv()
+
+# Obter o valor da variável de ambiente
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
 # Temporary cache to store embeddings
 corpus_embeddings_cache = {}
