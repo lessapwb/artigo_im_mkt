@@ -95,14 +95,14 @@ def find_similar_response(question, api_key, max_chunks=30):
     # Chamada à API de completions atualizada
     response = openai.chat.completions.create(
         model="gpt-4-turbo",
-        messages=[
+        messages=[ 
             {
                 "role": "system",
                 "content": (
                     "Only english."
                     "You are a knowledgeable assistant with access to a detailed document database on topics related to market intelligence. "
                     "Use only the provided context to answer the user's questions as accurately and specifically as possible. "
-                    "If you can't generate a answear based in the context, respond with 'I cannot determine this based on the available data.' "
+                    "If you can't generate a answear based on the context, respond with 'I cannot determine this based on the available data.' "
                     "If the user asks about trends in market intelligence or marketing, analyze only articles from 2024 and respond with: 'Based on the database, the trends are...' followed by a bulleted list of each trend with a brief description and some article name."
                 )
             },
@@ -151,26 +151,40 @@ def ask():
 # Webhook endpoint for GitHub to trigger updates
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    # Verifica a assinatura do GitHub para garantir que o request é autêntico
-    signature = request.headers.get("X-Hub-Signature-256")
+    # Obter a assinatura do cabeçalho X-Hub-Signature-256
+    signature = request.headers.get('X-Hub-Signature-256')
+    
+    # Se a assinatura não estiver presente, retorne erro
     if signature is None:
         return 'No signature', 403
 
-    sha_name, signature = signature.split('=')  # Divide para obter o algoritmo e a assinatura
-    if sha_name != 'sha256':  # Verifica se o algoritmo é o sha256
-        return 'Invalid signature', 403
+    # O GitHub envia a assinatura no formato sha256=SIGNATURE_VALUE
+    sha_name, github_signature = signature.split('=')
+    
+    if sha_name != 'sha256':
+        return 'Invalid signature algorithm', 403
 
-    # Gera a assinatura usando o segredo e os dados da requisição
+    # Gerar a assinatura do servidor utilizando o segredo e os dados da requisição
     mac = hmac.new(WEBHOOK_SECRET.encode(), msg=request.data, digestmod=hashlib.sha256)
-    if not hmac.compare_digest(mac.hexdigest(), signature):  # Compara as assinaturas
+    generated_signature = mac.hexdigest()
+
+    # Adicione um log para verificar ambas as assinaturas
+    print(f"Generated signature (server): {generated_signature}")
+    print(f"GitHub signature: {github_signature}")
+
+    # Comparar as duas assinaturas
+    if not hmac.compare_digest(generated_signature, github_signature):
+        print("Signatures do not match!")
         return 'Invalid signature', 403
 
-    # Executa o script de atualização
+    # Se as assinaturas coincidirem, execute o script de atualização
     try:
         result = subprocess.run(['./update_app.sh'], check=True, capture_output=True, text=True)
         return 'Updated successfully', 200
     except subprocess.CalledProcessError as e:
         return f"Error running script: {e.stderr}", 500
 
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+# test
