@@ -3,6 +3,7 @@ import numpy as np
 from flask import Flask, render_template, request, jsonify, session
 from sklearn.metrics.pairwise import cosine_similarity
 import os
+import subprocess
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"
@@ -137,6 +138,17 @@ def ask():
     session["conversation_history"] = conversation_history
     
     return jsonify({"answer": response_text})
+
+# Webhook endpoint for GitHub to trigger updates
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    # Verifica se o request é do GitHub
+    if request.method == 'POST':
+        # Executa o script de atualização
+        subprocess.call(['./update_app.sh'])
+        return 'Updated successfully', 200
+    else:
+        return 'Invalid request', 400
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
