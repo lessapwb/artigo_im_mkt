@@ -147,9 +147,7 @@ def ask():
 # Webhook endpoint for GitHub to trigger updates
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    # Verifica se o GitHub está enviando dados
-    print("Request Data:", request.data)  # Adiciona esse log para verificar o conteúdo da requisição
-    
+    # Verifica a assinatura do GitHub para garantir que o request é autêntico
     signature = request.headers.get("X-Hub-Signature-256")
     if signature is None:
         return 'No signature', 403
@@ -158,6 +156,7 @@ def webhook():
     if sha_name != 'sha256':  # Verifica se o algoritmo é o sha256
         return 'Invalid signature', 403
 
+    # Gera a assinatura usando o segredo e os dados da requisição
     mac = hmac.new(WEBHOOK_SECRET.encode(), msg=request.data, digestmod=hashlib.sha256)
     if not hmac.compare_digest(mac.hexdigest(), signature):  # Compara as assinaturas
         return 'Invalid signature', 403
@@ -168,7 +167,6 @@ def webhook():
         return 'Updated successfully', 200
     except subprocess.CalledProcessError as e:
         return f"Error running script: {e.stderr}", 500
-
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
